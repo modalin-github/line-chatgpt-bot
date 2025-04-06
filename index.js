@@ -7,28 +7,26 @@ import { GoogleGenerativeAI } from '@google/generative-ai'
 dotenv.config()
 const app = express()
 
-// ===== LINE 設定 =====
+// ===== LINE 配置 =====
 const config = {
   channelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN,
   channelSecret: process.env.LINE_CHANNEL_SECRET,
 }
 const client = new Client(config)
 
-// ===== Gemini 設定 =====
+// ===== Gemini 配置 =====
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY)
 const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' })
 
-// ===== 設定 rawBody 支援 LINE middleware 驗證 =====
+// ===== 處理 rawBody for LINE middleware 驗證 =====
 app.use(express.json({
   verify: (req, res, buf) => {
     req.rawBody = buf
   }
 }))
-
-// ===== 套用 LINE middleware 驗證簽名 =====
 app.use(middleware(config))
 
-// ===== webhook handler =====
+// ===== Webhook 路由處理 =====
 app.post('/webhook', async (req, res) => {
   try {
     await Promise.all(req.body.events.map(handleEvent))
@@ -39,24 +37,22 @@ app.post('/webhook', async (req, res) => {
   }
 })
 
-// ===== 處理 LINE 訊息事件 =====
+// ===== 處理 LINE 訊息事件，呼叫 Gemini 回覆 =====
 async function handleEvent(event) {
   if (event.type !== 'message' || event.message.type !== 'text') {
     return Promise.resolve(null)
   }
 
-  const userMessage = event.message.text
-
   try {
-    const prompt = `請用繁體中文回答以下問題：\n${userMessage}`
-    const result = await model.generateContent([prompt])
-    const replyText = result.response.text().trim()
+    const userMessage = event.message.text
+    const result = await model.generateContent([`請用繁體中文回答以下問題：${userMessage}`])
+    const response = await result.response
+    const replyText = response.text()
 
     return client.replyMessage(event.replyToken, {
       type: 'text',
       text: replyText
     })
-
   } catch (error) {
     console.error('handleEvent error:', error)
     return client.replyMessage(event.replyToken, {
@@ -66,8 +62,8 @@ async function handleEvent(event) {
   }
 }
 
-// ===== 設定埠號 =====
+// ===== 啟動伺服器 =====
 const port = process.env.PORT || 10000
 app.listen(port, () => {
-  console.log(`Server running on ${port}`)
+  console.log(`🚀 Server is running on ${port}`)
 })
