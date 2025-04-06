@@ -1,68 +1,68 @@
 const express = require('express');
 const { Client, middleware } = require('@line/bot-sdk');
-const dotenv = require('dotenv');
 const axios = require('axios');
+require('dotenv').config();
 
-dotenv.config();
 const app = express();
 
-// 設定 LINE Channel 金鑰
 const config = {
   channelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN,
-  channelSecret: process.env.LINE_CHANNEL_SECRET,
+  channelSecret: process.env.LINE_CHANNEL_SECRET
 };
 
-// 初始化 LINE 客戶端
 const client = new Client(config);
+app.use(middleware(config));
 
-// 監聽 Webhook 路由並加上 middleware 驗證
-app.post('/webhook', middleware(config), async (req, res) => {
+app.post('/webhook', async (req, res) => {
   try {
     await Promise.all(req.body.events.map(handleEvent));
-    res.status(200).end();
+    res.status(200).end(); // 回傳 200 是關鍵！
   } catch (err) {
     console.error('Webhook error:', err);
     res.status(500).end();
   }
 });
 
-// 處理收到的 LINE 訊息
 function handleEvent(event) {
   if (event.type !== 'message' || event.message.type !== 'text') {
     return Promise.resolve(null);
   }
 
-  // 傳送訊息至 OpenRouter.ai
-  return axios.post(
-    'https://openrouter.ai/api/v1/chat/completions',
-    {
-      model: 'openai/gpt-3.5-turbo',
-      messages: [{ role: 'user', content: event.message.text }],
-    },
-    {
-      headers: {
-        Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
-        'Content-Type': 'application/json',
+  // 傳送問題給 OpenRouter
+  return axios.post('https://openrouter.ai/api/v1/chat/completions', {
+    model: 'openchat/openchat-3.5-0106', // 可替換為其他模型 ID
+    messages: [
+      {
+        role: 'system',
+        content: '請一律使用繁體中文回答用戶的問題。若內容與中文地區有關，請以台灣為主要參考依據。'
       },
+      {
+        role: 'user',
+        content: event.message.text
+      }
+    ]
+  }, {
+    headers: {
+      Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
+      'Content-Type': 'application/json'
     }
-  )
-    .then((response) => {
+  })
+    .then(response => {
       const reply = response.data.choices[0].message.content;
       return client.replyMessage(event.replyToken, {
         type: 'text',
-        text: reply,
+        text: reply
       });
     })
-    .catch((err) => {
+    .catch(err => {
       console.error('OpenRouter Error:', err.response?.data || err.message);
       return client.replyMessage(event.replyToken, {
         type: 'text',
-        text: '抱歉，AI 回應失敗了 🥺',
+        text: '抱歉，AI 回應失敗了 🥲'
       });
     });
 }
 
-// 啟動 Server
 const port = process.env.PORT || 3000;
 app.listen(port, () => {
   console.log(`Server running on ${port}`);
