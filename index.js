@@ -6,68 +6,66 @@ import axios from 'axios';
 dotenv.config();
 const app = express();
 
-// LINE Bot 設定
 const config = {
   channelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN,
-  channelSecret: process.env.LINE_CHANNEL_SECRET,
+  channelSecret: process.env.LINE_CHANNEL_SECRET
 };
 
-// 初始化 LINE Bot 客戶端
 const client = new Client(config);
-
-// 加入 LINE middleware 驗證
 app.use(middleware(config));
 
-// Webhook 接收點
+// Webhook endpoint
 app.post('/webhook', async (req, res) => {
   try {
     await Promise.all(req.body.events.map(handleEvent));
-    res.status(200).end(); // ✅ LINE 要求 200 回應
+    res.status(200).end(); // LINE 要求 200 OK
   } catch (err) {
     console.error('Webhook error:', err);
     res.status(500).end();
   }
 });
 
-// 處理 LINE 傳入事件
+// Gemini 回覆邏輯
 async function handleEvent(event) {
   if (event.type !== 'message' || event.message.type !== 'text') {
     return Promise.resolve(null);
   }
 
-  const userMessage = event.message.text;
-
   try {
-    // 呼叫 Gemini Pro API
-    const response = await axios.post(
+    const geminiReply = await axios.post(
       'https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent',
       {
-        contents: [{ parts: [{ text: userMessage }] }],
+        contents: [
+          {
+            parts: [{ text: `請用繁體中文回答以下問題：${event.message.text}` }]
+          }
+        ]
       },
       {
         headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${process.env.GEMINI_API_KEY}`,
+          'Content-Type': 'application/json'
         },
+        params: {
+          key: process.env.GEMINI_API_KEY
+        }
       }
     );
 
-    const replyText = response.data.candidates?.[0]?.content?.parts?.[0]?.text || '抱歉，我無法理解你的訊息。';
+    const text = geminiReply.data.candidates?.[0]?.content?.parts?.[0]?.text || '抱歉，我無法理解您的問題 😅';
 
     return client.replyMessage(event.replyToken, {
       type: 'text',
-      text: replyText,
+      text: text
     });
   } catch (error) {
-    console.error('Gemini Error:', error?.response?.data || error.message);
+    console.error('Gemini API Error:', error.response?.data || error.message);
     return client.replyMessage(event.replyToken, {
       type: 'text',
-      text: '抱歉，AI 回應失敗了 😢',
+      text: '出錯了，AI 沒有回應 😢'
     });
   }
 }
 
-// 設定 port
 const port = process.env.PORT || 3000;
 app.listen(port, () => {
   console.log(`Server running on ${port}`);
