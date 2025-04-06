@@ -1,10 +1,9 @@
-const express = require('express');
-const { middleware, Client } = require('@line/bot-sdk');
-const dotenv = require('dotenv');
-const axios = require('axios');
+import express from 'express';
+import { Client, middleware } from '@line/bot-sdk';
+import dotenv from 'dotenv';
+import axios from 'axios';
 
 dotenv.config();
-
 const app = express();
 
 // LINE Bot 設定
@@ -13,11 +12,14 @@ const config = {
   channelSecret: process.env.LINE_CHANNEL_SECRET,
 };
 
-// 初始化 LINE 客戶端
 const client = new Client(config);
 
-// Webhook 路由，先使用 middleware
-app.post('/webhook', middleware(config), async (req, res) => {
+// Middleware
+app.use(middleware(config));
+app.use(express.json()); // 確保可以解析 JSON 請求
+
+// Webhook 接收點
+app.post('/webhook', async (req, res) => {
   try {
     await Promise.all(req.body.events.map(handleEvent));
     res.status(200).end();
@@ -27,48 +29,50 @@ app.post('/webhook', middleware(config), async (req, res) => {
   }
 });
 
-// 其他路由可以使用 express.json() 解析 JSON 主體
-app.use(express.json());
-
-// 處理 LINE 訊息事件
+// 處理訊息事件
 async function handleEvent(event) {
   if (event.type !== 'message' || event.message.type !== 'text') {
-    return Promise.resolve(null);
+    return null;
   }
 
-  const userMessage = event.message.text;
-
   try {
-    const geminiResponse = await axios.post(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${process.env.GEMINI_API_KEY}`,
-      {
-        contents: [{ parts: [{ text: userMessage }] }],
-      },
-      {
-        headers: { 'Content-Type': 'application/json' },
-      }
-    );
-
-    const replyText =
-      geminiResponse.data.candidates?.[0]?.content?.parts?.[0]?.text ||
-      '抱歉，我無法取得回應。';
-
-    await client.replyMessage(event.replyToken, {
+    // 使用 Gemini API 回覆訊息
+    const geminiReply = await callGeminiAPI(event.message.text);
+    return client.replyMessage(event.replyToken, {
       type: 'text',
-      text: replyText,
+      text: geminiReply,
     });
-  } catch (error) {
-    console.error('Gemini API 錯誤:', error.response?.data || error.message);
-
-    await client.replyMessage(event.replyToken, {
+  } catch (err) {
+    console.error('Reply error:', err);
+    return client.replyMessage(event.replyToken, {
       type: 'text',
       text: '抱歉，AI 回應失敗了 😢',
     });
   }
 }
 
-// 啟動伺服器
+// 呼叫 Gemini API
+async function callGeminiAPI(userInput) {
+  const apiKey = process.env.GEMINI_API_KEY;
+  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${apiKey}`;
+
+  const response = await axios.post(endpoint, {
+    contents: [
+      {
+        parts: [{ text: userInput }],
+      },
+    ],
+  });
+
+  const candidates = response.data.candidates;
+  if (candidates && candidates.length > 0) {
+    return candidates[0].content.parts[0].text;
+  } else {
+    return '抱歉，我沒有理解你的意思。';
+  }
+}
+
 const port = process.env.PORT || 10000;
 app.listen(port, () => {
-  console.log(`Server running on port ${port}`);
+  console.log(`Server is running on ${port}`);
 });
