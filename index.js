@@ -4,75 +4,68 @@ import dotenv from 'dotenv';
 import axios from 'axios';
 
 dotenv.config();
-
 const app = express();
 
-// 設定 LINE Bot 的憑證資訊
+// LINE Bot 設定
 const config = {
   channelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN,
-  channelSecret: process.env.LINE_CHANNEL_SECRET
+  channelSecret: process.env.LINE_CHANNEL_SECRET,
 };
-
-// 初始化 LINE Bot 客戶端
 const client = new Client(config);
 
-// 加入 middleware 驗證簽章
+// 驗證 Webhook 簽名
 app.use(middleware(config));
 
-// 接收 Webhook 的 POST 請求
+// Webhook 路由
 app.post('/webhook', async (req, res) => {
   try {
     await Promise.all(req.body.events.map(handleEvent));
-    res.status(200).end(); // ✅ LINE 伺服器需要收到 200 OK
+    res.status(200).end(); // 回傳 200 OK
   } catch (err) {
-    console.error('Webhook error:', err);
+    console.error('Webhook Error:', err);
     res.status(500).end();
   }
 });
 
-// 處理 LINE 傳來的事件
+// 處理事件
 async function handleEvent(event) {
   if (event.type !== 'message' || event.message.type !== 'text') {
     return Promise.resolve(null);
   }
 
-  // 使用 Gemini API 回覆
+  // Gemini API 請求
   try {
+    const prompt = `請用繁體中文回答以下問題：${event.message.text}`;
+
     const response = await axios.post(
       'https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent',
       {
-        contents: [{
-          parts: [{ text: `請用繁體中文回答：${event.message.text}` }]
-        }]
+        contents: [{ parts: [{ text: prompt }] }],
       },
       {
         headers: {
           'Content-Type': 'application/json',
+          Authorization: `Bearer ${process.env.GEMINI_API_KEY}`,
         },
-        params: {
-          key: process.env.GEMINI_API_KEY
-        }
       }
     );
 
-    const reply = response.data.candidates?.[0]?.content?.parts?.[0]?.text || '無回應內容';
-
+    const reply = response.data.candidates?.[0]?.content?.parts?.[0]?.text || '抱歉，AI 沒有回應到 😥';
     return client.replyMessage(event.replyToken, {
       type: 'text',
-      text: reply
+      text: reply,
     });
-
-  } catch (err) {
-    console.error('Gemini API Error:', err.response?.data || err.message);
+  } catch (error) {
+    console.error('Gemini Error:', error.response?.data || error.message);
     return client.replyMessage(event.replyToken, {
       type: 'text',
-      text: '抱歉，AI 回應失敗了 😢'
+      text: '抱歉，AI 回應失敗了 😢',
     });
   }
 }
 
-// Render 預設會給定 process.env.PORT
+// 伺服器監聽
 const port = process.env.PORT || 3000;
 app.listen(port, () => {
-  console.log(`✅ Server running on ${port}`);
+  console.log(`Server running on port ${port}`);
 });
