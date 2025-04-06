@@ -1,15 +1,13 @@
 const express = require('express');
 const { Client, middleware } = require('@line/bot-sdk');
-const dotenv = require('dotenv');
 const axios = require('axios');
-
-dotenv.config();
+require('dotenv').config();
 
 const app = express();
 
 const config = {
   channelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN,
-  channelSecret: process.env.LINE_CHANNEL_SECRET,
+  channelSecret: process.env.LINE_CHANNEL_SECRET
 };
 
 const client = new Client(config);
@@ -18,67 +16,51 @@ app.use(middleware(config));
 app.post('/webhook', async (req, res) => {
   try {
     await Promise.all(req.body.events.map(handleEvent));
-    res.status(200).end();
+    res.status(200).end(); // 回傳 200 是關鍵！
   } catch (err) {
     console.error('Webhook error:', err);
     res.status(500).end();
   }
 });
 
-async function handleEvent(event) {
+function handleEvent(event) {
   if (event.type !== 'message' || event.message.type !== 'text') {
     return Promise.resolve(null);
   }
 
-  const models = [
-    {
-      name: 'openchat',
-      model: 'openchat/openchat-3.5-0106',
-      key: process.env.OPENROUTER_API_KEY_1,
-    },
-    {
-      name: 'mytho',
-      model: 'gryphe/mythomax-l2-13b',
-      key: process.env.OPENROUTER_API_KEY_2,
-    },
-    {
-      name: 'mistral',
-      model: 'mistralai/mistral-7b-instruct',
-      key: process.env.OPENROUTER_API_KEY_3,
+  // 傳送問題給 OpenRouter
+  return axios.post('https://openrouter.ai/api/v1/chat/completions', {
+    model: 'openchat/openchat-3.5-0106', // 可替換為其他模型 ID
+    messages: [
+      {
+        role: 'system',
+        content: '請一律使用繁體中文回答用戶的問題。若內容與中文地區有關，請以台灣為主要參考依據。'
+      },
+      {
+        role: 'user',
+        content: event.message.text
+      }
+    ]
+  }, {
+    headers: {
+      Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
+      'Content-Type': 'application/json'
     }
-  ];
-
-  let reply = null;
-  for (let m of models) {
-    try {
-      const response = await axios.post(
-        'https://openrouter.ai/api/v1/chat/completions',
-        {
-          model: m.model,
-          messages: [{ role: 'user', content: event.message.text }]
-        },
-        {
-          headers: {
-            Authorization: `Bearer ${m.key}`,
-            'Content-Type': 'application/json',
-          },
-        }
-      );
-
-      reply = response.data.choices[0].message.content;
-      console.log(`✅ 使用模型 ${m.name} 回覆成功`);
-      break; // 成功就跳出
-    } catch (err) {
-      console.error(`❌ 模型 ${m.name} 錯誤:`, err.response?.data || err.message);
-    }
-  }
-
-  if (!reply) reply = '抱歉，目前 AI 回應失敗了 😢';
-
-  return client.replyMessage(event.replyToken, {
-    type: 'text',
-    text: reply,
-  });
+  })
+    .then(response => {
+      const reply = response.data.choices[0].message.content;
+      return client.replyMessage(event.replyToken, {
+        type: 'text',
+        text: reply
+      });
+    })
+    .catch(err => {
+      console.error('OpenRouter Error:', err.response?.data || err.message);
+      return client.replyMessage(event.replyToken, {
+        type: 'text',
+        text: '抱歉，AI 回應失敗了 🥲'
+      });
+    });
 }
 
 const port = process.env.PORT || 3000;
