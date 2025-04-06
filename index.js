@@ -16,7 +16,7 @@ const client = new Client(config)
 
 // ===== Gemini 設定 =====
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY)
-const model = genAI.getGenerativeModel({ model: 'gemini-pro' })
+const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' })
 
 // ===== 設定 rawBody 支援 LINE middleware 驗證 =====
 app.use(express.json({
