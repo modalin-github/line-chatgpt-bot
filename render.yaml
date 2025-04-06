@@ -5,3 +5,4 @@ services:
     buildCommand: npm install
     startCommand: node index.js
     plan: free
+    autoDeploy: true
