@@ -11,36 +11,38 @@ const config = {
   channelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN,
   channelSecret: process.env.LINE_CHANNEL_SECRET,
 };
+
+// 初始化 LINE Bot 客戶端
 const client = new Client(config);
 
-// 驗證 Webhook 簽名
+// 加入 LINE middleware 驗證
 app.use(middleware(config));
 
-// Webhook 路由
+// Webhook 接收點
 app.post('/webhook', async (req, res) => {
   try {
     await Promise.all(req.body.events.map(handleEvent));
-    res.status(200).end(); // 回傳 200 OK
+    res.status(200).end(); // ✅ LINE 要求 200 回應
   } catch (err) {
-    console.error('Webhook Error:', err);
+    console.error('Webhook error:', err);
     res.status(500).end();
   }
 });
 
-// 處理事件
+// 處理 LINE 傳入事件
 async function handleEvent(event) {
   if (event.type !== 'message' || event.message.type !== 'text') {
     return Promise.resolve(null);
   }
 
-  // Gemini API 請求
-  try {
-    const prompt = `請用繁體中文回答以下問題：${event.message.text}`;
+  const userMessage = event.message.text;
 
+  try {
+    // 呼叫 Gemini Pro API
     const response = await axios.post(
       'https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent',
       {
-        contents: [{ parts: [{ text: prompt }] }],
+        contents: [{ parts: [{ text: userMessage }] }],
       },
       {
         headers: {
@@ -50,13 +52,14 @@ async function handleEvent(event) {
       }
     );
 
-    const reply = response.data.candidates?.[0]?.content?.parts?.[0]?.text || '抱歉，AI 沒有回應到 😥';
+    const replyText = response.data.candidates?.[0]?.content?.parts?.[0]?.text || '抱歉，我無法理解你的訊息。';
+
     return client.replyMessage(event.replyToken, {
       type: 'text',
-      text: reply,
+      text: replyText,
     });
   } catch (error) {
-    console.error('Gemini Error:', error.response?.data || error.message);
+    console.error('Gemini Error:', error?.response?.data || error.message);
     return client.replyMessage(event.replyToken, {
       type: 'text',
       text: '抱歉，AI 回應失敗了 😢',
@@ -64,8 +67,8 @@ async function handleEvent(event) {
   }
 }
 
-// 伺服器監聽
+// 設定 port
 const port = process.env.PORT || 3000;
 app.listen(port, () => {
-  console.log(`Server running on port ${port}`);
+  console.log(`Server running on ${port}`);
 });
