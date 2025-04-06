@@ -1,78 +1,59 @@
-import express from 'express';
-import { Client, middleware } from '@line/bot-sdk';
-import dotenv from 'dotenv';
-import axios from 'axios';
+import express from 'express'
+import { Client, middleware } from '@line/bot-sdk'
+import dotenv from 'dotenv'
+import axios from 'axios'
 
-dotenv.config();
-const app = express();
+dotenv.config()
+const app = express()
 
-// LINE Bot 設定
 const config = {
   channelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN,
-  channelSecret: process.env.LINE_CHANNEL_SECRET,
-};
+  channelSecret: process.env.LINE_CHANNEL_SECRET
+}
 
-const client = new Client(config);
+const client = new Client(config)
 
-// Middleware
-app.use(middleware(config));
-app.use(express.json()); // 確保可以解析 JSON 請求
+// 使用 JSON 中介處理器（重要：支援 Buffer 驗證）
+app.use(express.json({
+  verify: (req, res, buf) => {
+    req.rawBody = buf
+  }
+}))
 
-// Webhook 接收點
+// 放在 JSON middleware 之後，使用 LINE 的 middleware 驗證簽章
+app.use(middleware(config))
+
+// webhook handler
 app.post('/webhook', async (req, res) => {
   try {
-    await Promise.all(req.body.events.map(handleEvent));
-    res.status(200).end();
+    await Promise.all(req.body.events.map(handleEvent))
+    res.status(200).end()
   } catch (err) {
-    console.error('Webhook error:', err);
-    res.status(500).end();
+    console.error('Webhook error:', err)
+    res.status(500).end()
   }
-});
+})
 
-// 處理訊息事件
+// 處理 LINE 訊息事件
 async function handleEvent(event) {
   if (event.type !== 'message' || event.message.type !== 'text') {
-    return null;
+    return Promise.resolve(null)
   }
 
   try {
-    // 使用 Gemini API 回覆訊息
-    const geminiReply = await callGeminiAPI(event.message.text);
+    const userMessage = event.message.text
+    const replyText = `你剛剛說的是：「${userMessage}」` // 範例回應
+
     return client.replyMessage(event.replyToken, {
       type: 'text',
-      text: geminiReply,
-    });
-  } catch (err) {
-    console.error('Reply error:', err);
-    return client.replyMessage(event.replyToken, {
-      type: 'text',
-      text: '抱歉，AI 回應失敗了 😢',
-    });
+      text: replyText
+    })
+  } catch (error) {
+    console.error('handleEvent error:', error)
   }
 }
 
-// 呼叫 Gemini API
-async function callGeminiAPI(userInput) {
-  const apiKey = process.env.GEMINI_API_KEY;
-  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${apiKey}`;
-
-  const response = await axios.post(endpoint, {
-    contents: [
-      {
-        parts: [{ text: userInput }],
-      },
-    ],
-  });
-
-  const candidates = response.data.candidates;
-  if (candidates && candidates.length > 0) {
-    return candidates[0].content.parts[0].text;
-  } else {
-    return '抱歉，我沒有理解你的意思。';
-  }
-}
-
-const port = process.env.PORT || 10000;
+const port = process.env.PORT || 10000
 app.listen(port, () => {
-  console.log(`Server is running on ${port}`);
-});
+  console.log(`Server running on ${port}`)
+})
