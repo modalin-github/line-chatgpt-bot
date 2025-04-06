@@ -1,7 +1,7 @@
 {
   "name": "line-chatgpt-bot",
   "version": "1.0.0",
-  "description": "A LINE bot that connects to OpenAI's ChatGPT using Node.js and Render",
+  "description": "A LINE bot using Node.js + Gemini API on Render",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
