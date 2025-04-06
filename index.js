@@ -5,53 +5,55 @@ require('dotenv').config();
 
 const app = express();
 
-// 設定 LINE 機器人基本資訊
 const config = {
   channelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN,
-  channelSecret: process.env.LINE_CHANNEL_SECRET
+  channelSecret: process.env.LINE_CHANNEL_SECRET,
 };
 
 const client = new Client(config);
 
-// 處理 LINE webhook
-app.post('/webhook', middleware(config), async (req, res) => {
-  Promise.all(req.body.events.map(handleEvent)).then((result) => res.json(result));
+app.use(middleware(config));
+
+app.post('/webhook', async (req, res) => {
+  try {
+    await Promise.all(req.body.events.map(handleEvent));
+    res.status(200).end(); // 回傳 200 是關鍵！
+  } catch (err) {
+    console.error('Webhook error:', err);
+    res.status(500).end();
+  }
 });
 
-async function handleEvent(event) {
+function handleEvent(event) {
   if (event.type !== 'message' || event.message.type !== 'text') {
-    return null;
+    return Promise.resolve(null);
   }
 
-  // 使用 ChatGPT 回應文字訊息
-  const userMessage = event.message.text;
-  const reply = await askChatGPT(userMessage);
-
-  return client.replyMessage(event.replyToken, {
-    type: 'text',
-    text: reply,
-  });
-}
-
-// 呼叫 OpenAI API
-async function askChatGPT(message) {
-  const response = await axios.post(
-    'https://api.openai.com/v1/chat/completions',
-    {
-      model: 'gpt-3.5-turbo',
-      messages: [{ role: 'user', content: message }]
+  // 將文字傳給 OpenAI ChatGPT
+  return axios.post('https://api.openai.com/v1/chat/completions', {
+    model: 'gpt-3.5-turbo',
+    messages: [{ role: 'user', content: event.message.text }],
+  }, {
+    headers: {
+      Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+      'Content-Type': 'application/json',
     },
-    {
-      headers: {
-        'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
-        'Content-Type': 'application/json'
-      }
-    }
-  );
-  return response.data.choices[0].message.content.trim();
+  }).then(response => {
+    const reply = response.data.choices[0].message.content;
+    return client.replyMessage(event.replyToken, {
+      type: 'text',
+      text: reply,
+    });
+  }).catch(err => {
+    console.error('OpenAI Error:', err.response?.data || err.message);
+    return client.replyMessage(event.replyToken, {
+      type: 'text',
+      text: '抱歉，AI 回應失敗了 😢',
+    });
+  });
 }
 
 const port = process.env.PORT || 3000;
 app.listen(port, () => {
-  console.log(`Listening on port ${port}`);
+  console.log(`Server running on ${port}`);
 });
